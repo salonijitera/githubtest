@@ -1,4 +1,4 @@
-import {
+ {
   registerDecorator,
   ValidationArguments,
   ValidationOptions,
@@ -7,6 +7,7 @@ import {
 } from 'class-validator';
 import { Injectable } from '@nestjs/common';
 import { EntitySchema, Not, DataSource, ObjectType, FindOptionsWhere } from 'typeorm';
+import { EmailVerificationToken } from '@entities/email_verification_tokens';
 
 export interface UniqueValidationArguments<E> extends ValidationArguments {
   constraints: [EntitySchema<E> | ObjectType<E>];
@@ -33,6 +34,14 @@ export class EntityUniqueValidator implements ValidatorConstraintInterface {
 
     const count = await entityRepo.count({ where: query });
 
+    return count === 0;
+  }
+
+  async isEmailVerificationTokenUnique(token: string): Promise<boolean> {
+    const entityRepo = await this.dataSource.getRepository(EmailVerificationToken);
+    const count = await entityRepo.count({
+      where: { token, used: false },
+    });
     return count === 0;
   }
 
