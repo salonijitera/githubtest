@@ -1,9 +1,9 @@
-
-import { Body, Controller, HttpCode, HttpStatus, Post, BadRequestException, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dtos/login.dto';
 import { RegisterUserDto } from './dtos/register-user.dto';
+import { VerifyEmailDto } from './dtos/verify-email.dto';
 
 @Controller()
 @ApiTags('Auth')
@@ -36,6 +36,26 @@ export class AuthController {
         throw new ConflictException(error.response);
       } else {
         throw new InternalServerErrorException('An unexpected error occurred on the server.');
+      }
+    }
+  }
+
+  @Post('/api/users/verify-email')
+  @HttpCode(HttpStatus.OK)
+  async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
+    try {
+      const verifyResult = await this.authService.verifyEmailToken(verifyEmailDto.token);
+      return {
+        status: verifyResult.statusCode,
+        message: verifyResult.message,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw new BadRequestException(error.response);
+      } else if (error instanceof NotFoundException) {
+        throw new NotFoundException(error.response);
+      } else {
+        throw new InternalServerErrorException('An unexpected error occurred');
       }
     }
   }

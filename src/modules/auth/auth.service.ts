@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, InternalServerErrorException, MoreThan } from '@nestjs/common';
+
+import { BadRequestException, Injectable, InternalServerErrorException, MoreThan, NotFoundException } from '@nestjs/common';
 import { UserRepository } from 'src/repositories/users.repository';
 import { EmailVerificationTokenRepository } from 'src/repositories/email-verification-tokens.repository';
 import { LoginAttemptRepository } from 'src/repositories/login-attempts.repository';
@@ -119,8 +120,8 @@ export class AuthService {
 
   async verifyEmailToken(token: string): Promise<{ message: string; statusCode: number }> {
     if (!token) {
-      throw new BadRequestException('Token is required');
-    }
+      throw new BadRequestException('Verification token is required.');
+    } 
 
     try {
       const emailVerificationToken = await this.emailVerificationTokenRepository.findOne({
@@ -129,13 +130,13 @@ export class AuthService {
           used: false,
           expires_at: MoreThan(new Date()),
         },
-      });
+      }); 
 
       if (!emailVerificationToken) {
-        throw new BadRequestException('Token is invalid or expired');
+        throw new NotFoundException('Invalid or expired verification token.');
       }
 
-      emailVerificationToken.used = true;
+      emailVerificationToken.used = true; 
       await this.emailVerificationTokenRepository.save(emailVerificationToken);
 
       const user = await this.userRepository.findOne(emailVerificationToken.user_id);
@@ -143,9 +144,9 @@ export class AuthService {
         user.email_verified = true;
         await this.userRepository.save(user);
       }
-
+      
       return {
-        message: 'Email verified successfully',
+        message: 'Email verified successfully.',
         statusCode: 200,
       };
     } catch (error) {
