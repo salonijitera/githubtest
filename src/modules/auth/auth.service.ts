@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, InternalServerErrorException, MoreThan, NotFoundException } from '@nestjs/common';
-import { UserRepository } from 'src/repositories/users.repository';
+import { UserRepository } from '@repositories/users.repository'; // Updated import path
 import { EmailVerificationTokenRepository } from 'src/repositories/email-verification-tokens.repository';
-import { LoginAttemptRepository } from 'src/repositories/login-attempts.repository';
+import { LoginAttemptRepository } from '@repositories/login-attempts.repository'; // Updated import path
 import { EmailService } from 'src/shared/email/email.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
@@ -89,36 +89,31 @@ export class AuthService {
       throw new BadRequestException('Username and password are required.');
     }
 
-    try {
-      const user = await this.userRepository.findOne({ where: { username } });
+    const user = await this.userRepository.findOne({ where: { username } });
 
-      if (!user || !user.password_hash) {
-        throw new NotFoundException('User not found.'); // Changed from return to throw to align with the NotFoundException usage
-      }
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
 
-      const passwordIsValid = await bcrypt.compare(password, user.password_hash);
+    const passwordIsValid = await bcrypt.compare(password, user.password_hash);
+    const loginAttempt = new LoginAttempt();
+    loginAttempt.user_id = user.id;
+    loginAttempt.attempted_at = new Date();
+    loginAttempt.ip_address = ip_address;
+    loginAttempt.successful = passwordIsValid; // Removed email_verified check as it's not required by the requirement
 
-      const loginAttempt = new LoginAttempt();
-      loginAttempt.user_id = user.id;
-      loginAttempt.attempted_at = new Date();
-      loginAttempt.ip_address = ip_address;
-      loginAttempt.successful = passwordIsValid && user.email_verified; // Added email_verified check
+    await this.loginAttemptRepository.save(loginAttempt);
 
-      await this.loginAttemptRepository.save(loginAttempt);
-
-      if (passwordIsValid) {
-        if (user.email_verified) {
-          // Generate and return access token here
-          // The actual token generation logic should be implemented here as per application's requirements
-          return { message: 'Login successful.', statusCode: 200, access_token: '...' };
-        } else {
-          return { message: 'Email not verified.', statusCode: 401 }; // Added email not verified message
-        }
+    if (passwordIsValid) {
+      if (user.email_verified) {
+        // Generate and return access token here
+        // The actual token generation logic should be implemented here as per application's requirements
+        return { message: 'Login successful.', statusCode: 200, access_token: '...' };
       } else {
-        return { message: 'Incorrect credentials.', statusCode: 401 };
+        return { message: 'Email not verified.', statusCode: 401 };
       }
-    } catch (error) {
-      throw new InternalServerErrorException(`An error occurred during the login process: ${error.message}`);
+    } else {
+      return { message: 'Incorrect credentials.', statusCode: 401 };
     }
   }
 
@@ -127,38 +122,31 @@ export class AuthService {
       throw new BadRequestException('Token is required');
     }
 
-    try {
-      const emailVerificationToken = await this.emailVerificationTokenRepository.findOne({
-        where: {
-          token: token,
-          used: false,
-          expires_at: MoreThan(new Date()),
-        },
-      });
+    const emailVerificationToken = await this.emailVerificationTokenRepository.findOne({
+      where: {
+        token: token,
+        used: false,
+        expires_at: MoreThan(new Date()),
+      },
+    });
 
-      if (!emailVerificationToken) {
-        throw new NotFoundException('Token is invalid or expired'); // Changed from BadRequestException to NotFoundException
-      }
-
-      emailVerificationToken.used = true;
-      await this.emailVerificationTokenRepository.save(emailVerificationToken);
-
-      const user = await this.userRepository.findOne(emailVerificationToken.user_id);
-      if (user) {
-        user.email_verified = true;
-        await this.userRepository.save(user);
-      }
-
-      return {
-        message: 'Email verified successfully',
-        statusCode: 200,
-      };
-    } catch (error) {
-      if (error instanceof BadRequestException || error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new InternalServerErrorException('An error occurred during the email verification process');
+    if (!emailVerificationToken) {
+      throw new NotFoundException('Token is invalid or expired');
     }
+
+    emailVerificationToken.used = true;
+    await this.emailVerificationTokenRepository.save(emailVerificationToken);
+
+    const user = await this.userRepository.findOne(emailVerificationToken.user_id);
+    if (user) {
+      user.email_verified = true;
+      await this.userRepository.save(user);
+    }
+
+    return {
+      message: 'Email verified successfully',
+      statusCode: 200,
+    };
   }
 
   // Other service methods...
