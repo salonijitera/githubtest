@@ -2,7 +2,9 @@ import { BadRequestException, Injectable, InternalServerErrorException, MoreThan
 import { UserRepository } from 'src/repositories/users.repository';
 import { EmailVerificationTokenRepository } from 'src/repositories/email-verification-tokens.repository';
 import { LoginAttemptRepository } from 'src/repositories/login-attempts.repository';
+import { EmailService } from 'src/shared/email/email.service';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 import { User } from 'src/entities/users';
 import { EmailVerificationToken } from 'src/entities/email_verification_tokens';
 import { LoginAttempt } from 'src/entities/login_attempts';
@@ -24,7 +26,60 @@ export class AuthService {
     private readonly userRepository: UserRepository,
     private readonly emailVerificationTokenRepository: EmailVerificationTokenRepository,
     private readonly loginAttemptRepository: LoginAttemptRepository,
+    private readonly emailService: EmailService, // Added from new code
   ) {}
+
+  async registerUser(username: string, passwordHash: string, email: string): Promise<{ message: string; status: string; }> {
+    if (!username || !passwordHash || !email) {
+      throw new BadRequestException('Missing required registration fields');
+    }
+
+    const existingUser = await this.userRepository.findOne({ where: { email } });
+    if (existingUser) {
+      throw new BadRequestException('Email is already in use');
+    }
+
+    const encryptedPassword = await bcrypt.hash(passwordHash, 10);
+    const newUser = new User();
+    newUser.username = username;
+    newUser.password_hash = encryptedPassword;
+    newUser.email = email;
+    newUser.email_verified = false;
+    newUser.created_at = new Date();
+    newUser.updated_at = new Date();
+
+    const createdUser = await this.userRepository.save(newUser);
+
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const emailVerificationToken = new EmailVerificationToken();
+    emailVerificationToken.token = verificationToken;
+    emailVerificationToken.expires_at = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
+    emailVerificationToken.used = false;
+    emailVerificationToken.user_id = createdUser.id;
+    emailVerificationToken.created_at = new Date();
+    emailVerificationToken.updated_at = new Date();
+
+    await this.emailVerificationTokenRepository.save(emailVerificationToken);
+
+    const emailSent = await this.emailService.sendMail({
+      to: email,
+      subject: 'Verify Your Email',
+      template: 'email-verification',
+      context: {
+        username: username,
+        token: verificationToken,
+      },
+    });
+
+    if (!emailSent) {
+      throw new InternalServerErrorException('Failed to send verification email');
+    }
+
+    return {
+      message: 'Registration successful, please check your email to verify your account',
+      status: 'success',
+    };
+  }
 
   async login(loginDto: LoginDto): Promise<LoginResponseDto> {
     const { username, password_hash, ip_address } = loginDto;
